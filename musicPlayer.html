@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en" class="h-100per">
+<head>
+    <meta charset="UTF-8">
+    <title>AudioPlayer</title>
+    <meta http-equiv="Access-Control-Allow-Origin" content="*">
+</head>
+<body class="h-100per">
+	<div id='wrapper' class="h-100per">
+		<div  style='float:left;display:none'>
+			<label for='upload'>选择音频</label>
+			<input type='file' id='upload' multiple  >
+		</div>
+		<div style='float:left;clear:both' class="h-100per">
+			<table class='musWrapper'>
+				<tr class='musTitle'><td>歌曲列表</td></tr>
+				<tr class='musTitle'> 
+					<td style="height:30px;width:300px"> 
+						<input id='localSource' value='本地文件浏览' type='button' style="float:left" />
+						
+					</td>
+				</tr>
+				<tr id='musicList'></tr>
+			</table>
+		</div>
+		<div id='contentDiv' style='text-align:center;margin:0px auto;overflow:hidden' class="h-100per">
+			<h4 id='moveTitle'></h4>
+			<canvas id='canvasGg' width='600px' height='300px' ></canvas>
+		</div>
+	</div>
+
+
+<script type="text/javascript">
+
+	var Audioer = function(){
+		this.file = null;
+		this.fileList = [];
+		this.fileName = null;
+		this.fileIndex = null;
+		this.audioContext = null;
+		this.source = null;
+		this.buffer = null;
+		this.manuChange = false;
+		this.audioNode = null;
+		this.remoteMusArray = [];
+
+	}
+
+	Audioer.prototype = {
+		init: function(){
+			try{
+				window.AudioContext = window.AudioContext||window.webkitAudioContext;
+				this.audioContext = new AudioContext();
+				this._addListener();
+			}catch(e){
+				console.log('浏览器不支持audioContext',e);
+			}
+		},
+		_addListener: function(){
+			var that = this;
+			var filesInput = document.querySelector('#upload');
+			var tbList = document.querySelector('#musicList');
+			filesInput.addEventListener('change',function(val){
+				if(filesInput.files.length){
+					var filesArr =Array.from(filesInput.files);
+					filesArr.forEach(function(musfil,index){
+						var li = document.createElement('td');
+						li.setAttribute('id',musfil.name);
+						li.setAttribute('title',that.fileList.length + index +1  + ' - ' + musfil.name);
+						li.innerHTML = that.fileList.length + index +1  + ' - ' + musfil.name;
+						tbList.appendChild(li);
+					})
+
+					that.fileList.push(...filesArr);
+					that._setFileInfo(0);
+					if(that.audioNode && that.audioNode.context.state === 'running'){
+						//return;
+						that.audioNode.stop();
+						that.manuChange = true;
+					}
+					that._getFiles();
+				}
+			});
+
+			tbList.addEventListener('click',function(e){
+
+				if(e.target.nodeName.toLowerCase() === 'a'){	//网络歌曲
+					var tdList = Array.from(document.querySelectorAll('#musicList td a'));
+					if(tdList.length === 0){
+						return;
+					}
+					tdList.forEach(function(node){
+						node.style.opacity = 0.5;
+					})
+					tdList[e.target.parentNode.cellIndex].style.opacity = 1;
+					//that._setFileInfo(e.target.parentNode.cellIndex);
+				}else if(e.target.nodeName.toLowerCase() === 'td'){
+
+					that._setFileInfo(e.target.cellIndex);
+					if(that.audioNode){
+						that.audioNode.stop();
+					}
+					that.manuChange = true;
+					that._getFiles();
+				}
+								
+			});
+			//本地文件按钮
+			document.querySelector('#localSource').addEventListener('click',function(){
+				document.querySelector('#canvasGg').style.display = 'inline';
+				that.fileList = [];
+				that.remoteMusArray = [];
+				//删除frame
+				if(document.querySelector('#netWrapper')){
+					document.querySelector('#contentDiv').removeChild(document.querySelector('#netWrapper'));
+				}
+
+				//清空歌曲列表
+				if(document.querySelector('#musicList')){
+					document.querySelector('#musicList').innerHTML = '';
+				}
+				document.querySelector('#upload').click();
+			})
+
+		},
+		_setFileInfo: function(filIndex){
+			this.file = this.fileList[filIndex];
+			this.fileName = this.fileList[filIndex] ? this.fileList[filIndex].name : '';
+			this.fileIndex  = filIndex;
+			var tdList = Array.from(document.querySelectorAll('#musicList td'));
+		
+			if(tdList.length === 0){
+				return;
+			}
+			tdList.forEach(function(node){
+				node.style.opacity = 0.5;
+			})
+			tdList[filIndex].style.opacity = 1;
+		},
+		_getFiles: function(){
+			var that = this;
+			if(!that.file){
+				return;
+			}
+			var fr = new FileReader();
+			fr.readAsArrayBuffer(that.file);
+			fr.onload = function(e){
+				that.audioContext.decodeAudioData(e.target.result,function(buffer){
+					that.buffer = buffer;
+					that._play();
+				},function(e){
+					console.log('解码失败')
+				})
+			}
+		},
+		_play: function(){
+			var that = this;
+			var audioBufferSouceNode = that.audioContext.createBufferSource(),
+				analyser = that.audioContext.createAnalyser();	//创建分析器
+
+			//将source和分析器连接
+			audioBufferSouceNode.connect(analyser);
+			//将分析器和destination连接
+			audioBufferSouceNode.connect(that.audioContext.destination);
+			//复制buffer；
+			audioBufferSouceNode.buffer = that.buffer;
+
+			//先停止，然后播放
+			if(that.audioNode){
+				that.audioNode.stop();
+			}
+			audioBufferSouceNode.start(0);
+			//循环
+			//audioBufferSouceNode.loop = true;
+			audioBufferSouceNode.onended = function(){
+				if(that.manuChange){
+					that.manuChange = false;
+					return;
+				}
+				if(that.fileList[that.fileIndex + 1]){
+					that._setFileInfo(that.fileIndex + 1);
+					that._getFiles();
+				}else{
+					that._setFileInfo(0);
+					that._getFiles();
+				}
+				
+			}
+			document.querySelector('#moveTitle').innerHTML = that.fileName;
+			that.audioNode = audioBufferSouceNode;
+			that._drawMusic(analyser);
+		},
+		_drawMusic: function(analyser){
+			var that = this;
+			var musicArray,musicVal,musicHeadArray;
+			var can = document.querySelector('#canvasGg'),
+			ctx = can.getContext('2d'),
+			cWidth = can.width,
+			cHeight = can.height -2,
+			meterWidth = 10,
+			meterNum = 800 / (meterWidth + 2); //计算当前画布上能画多少条
+			 
+			ctx.fillStyle = '#a0c658';
+	
+			var draw = function(){
+				musicArray = new Uint8Array(analyser.frequencyBinCount);
+				analyser.getByteFrequencyData(musicArray);
+				var step = Math.round(musicArray.length/meterNum);
+				ctx.clearRect(0,0,cWidth,cHeight);
+				// 频谱的帽子数组
+				musicHeadArray = musicHeadArray || musicArray;
+				for(var i = 0; i< meterNum -17; i++){
+					musicVal = musicArray[i*step];
+					ctx.fillRect(i * 12, cHeight- musicVal,meterWidth,musicVal);
+					//帽子数组更新
+					if(musicHeadArray[i* step] < musicArray[i*step]){
+						musicHeadArray[i* step] = musicArray[i*step]
+					}else if(musicHeadArray[i* step] > 2 ){
+						musicHeadArray[i* step] -= 2;
+					}else if(musicHeadArray[i* step] <= 2){
+						musicHeadArray[i* step] = 0;
+					}
+					ctx.fillRect(i * 12, cHeight- musicHeadArray[i* step],meterWidth,5);
+				}
+				window.requestAnimationFrame(draw);
+			}
+			draw();
+		},
+
+	}
+	var audioObj = new Audioer();
+	audioObj.init();
+
+</script>
+<style>
+	.h-100per{
+		height:100%;
+	}
+	body{
+		background: linear-gradient(to top , #F5C6F8, #4D4981);
+		margin:0px;
+	}
+	.musWrapper{
+		width:300px;
+		height:100%;
+		border:1px solid blue;
+		display:block;
+		background: linear-gradient(to top , #F5C6F8, #29247A);
+	}
+	tbody{
+		height:100%;
+		display:block;
+	}
+	.musTitle td{
+		height:40px;
+		text-align:center;
+		color:rgb(1, 152, 216);
+		border-bottom:1px solid #8d9c8d;
+	}
+	
+	#musicList{
+		display:block;
+		height:calc( 100% - 82px);
+		overflow-y:auto;
+		overflow-x: hidden;
+	}
+	#musicList:hover{
+		cursor:pointer;
+		
+	}
+	#musicList td,a{
+		border-bottom:1px solid #8d9c8d;
+		display:block;
+		height:30px;
+		font-family:initial;
+		text-overflow: ellipsis;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		width:270px;
+		opacity:0.5;
+		color:black;
+	}
+	#musicList td,a:hover{
+		opacity: 1;
+	}
+	@keyframes movetitle{
+		0% {color:#ffff00; }
+		50% {color:#ff0000;}
+		100% {color:#00ff00;}
+	}
+	@-moz-keyframes movetitle{
+		0% {color:#ffff00;}
+		50% {color:#ff0000;}
+		100% {color:#00ff00;}
+	}
+	@-webkit-keyframes movetitle{
+		0% {color:#ffff00;}
+		50% {color:#ffff00;}
+		100% {color:#00ff00;}
+	}
+	#moveTitle{
+		height:30px;
+		text-align:center;
+		position:relative;
+		animation:movetitle 5s infinite linear ;
+		-moz-animation:movetitle 5s infinite linear ; /* Firefox */
+		-webkit-animation:movetitle 5s infinite linear ; /* Safari and Chrome */
+	}
+
+</style>
+</body>
+</html>
